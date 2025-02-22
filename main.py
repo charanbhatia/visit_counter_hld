@@ -1,35 +1,47 @@
 from fastapi import FastAPI, HTTPException
-from typing import Dict
+from redis_cache import RedisCache
+import redis
 
 app = FastAPI(title="Website Visit Counter")
-
-# In-memory storage for visit counts
-visit_counts: Dict[str, int] = {}
+redis_cache = RedisCache()
 
 @app.post("/visits/{page_id}")
 async def increment_visits(page_id: str):
     """
-    Increment the visit counter for a specific page
+    Increment the visit counter for a specific page using Redis
     """
-    if page_id not in visit_counts:
-        visit_counts[page_id] = 0
-    visit_counts[page_id] += 1
-    return {
-        "visits": visit_counts[page_id],
-        "served_via": "in_memory"
-    }
+    try:
+        count = redis_cache.increment_count(page_id)
+        return {
+            "visits": count,
+            "served_via": "redis"
+        }
+    except redis.ConnectionError:
+        raise HTTPException(status_code=503, detail="Redis service unavailable")
 
 @app.get("/visits/{page_id}")
 async def get_visits(page_id: str):
     """
-    Get the current visit count for a specific page
+    Get the current visit count for a specific page from Redis
     """
-    if page_id not in visit_counts:
-        visit_counts[page_id] = 0
-    
+    try:
+        count = redis_cache.get_count(page_id)
+        return {
+            "visits": count,
+            "served_via": "redis"
+        }
+    except redis.ConnectionError:
+        raise HTTPException(status_code=503, detail="Redis service unavailable")
+
+@app.get("/health")
+async def health_check():
+    """
+    Check the health of the API and Redis connection
+    """
+    redis_status = redis_cache.health_check()
     return {
-        "visits": visit_counts[page_id],
-        "served_via": "in_memory"
+        "api_status": "healthy",
+        "redis_status": "healthy" if redis_status else "unhealthy"
     }
 
 if __name__ == "__main__":
