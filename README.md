@@ -170,8 +170,5 @@ pytest tests/performance/
 ```
 
 ## Documentation
-- API Documentation: 
 - Website Visit Counter Documentation: https://scythe-columnist-019.notion.site/Detailed-Website-Visit-Counter-System-1a2cfc8a0c6d8004839cc2c91c9847b8
 
-## License
-MIT License - see [LICENSE](LICENSE) file
