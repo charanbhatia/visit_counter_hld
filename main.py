@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, HTTPException
 from typing import Dict
 
@@ -32,14 +31,6 @@ async def get_visits(page_id: str):
         "visits": visit_counts[page_id],
         "served_via": "in_memory"
     }
-
-# For testing purposes
-@app.get("/")
-async def root():
-    """
-    Root endpoint to verify API is running
-    """
-    return {"status": "Website Visit Counter is running"}
 
 if __name__ == "__main__":
     import uvicorn
