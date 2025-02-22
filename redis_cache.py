@@ -1,29 +1,24 @@
-import redis
 from typing import Tuple
 from local_cache import LocalCache
 from write_buffer import WriteBuffer
+from consistent_hash import ShardedRedis
 
 class RedisCache:
-    def __init__(self, host: str = "redis", port: int = 6379, db: int = 0):
-        self.client = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            decode_responses=True
-        )
+    def __init__(self):
+        self.sharded_redis = ShardedRedis()
         self.local_cache = LocalCache(ttl_seconds=5)
-        self.write_buffer = WriteBuffer(self.client, flush_interval=30)
+        self.write_buffer = WriteBuffer(self.sharded_redis, flush_interval=30)
 
-    def increment_count(self, page_id: str) -> int:
+    def increment_count(self, page_id: str) -> Tuple[int, str]:
         """
         Increment the visit count in write buffer
-        Returns the total count (Redis + buffer)
+        Returns tuple of (count, shard_id)
         """
         key = f"page:{page_id}"
-        total_count = self.write_buffer.increment(key)
+        total_count, shard_id = self.write_buffer.increment(key)
         # Update local cache with new total
         self.local_cache.set(key, total_count)
-        return total_count
+        return total_count, shard_id
 
     def get_count(self, page_id: str) -> Tuple[int, str]:
         """
@@ -38,23 +33,29 @@ class RedisCache:
             return cached_value, "in_memory"
         
         # On cache miss, flush buffer and get fresh count
-        self.write_buffer.flush()  # Immediate flush on read
+        self.write_buffer.flush()
         
-        # Get count from Redis
-        redis_count = int(self.client.get(key) or 0)
+        # Get count from appropriate shard
+        count, shard_id = self.sharded_redis.get(key)
+        count = int(count or 0)
         
         # Add any new pending counts
         pending_count = self.write_buffer.get_pending_count(key)
-        total_count = redis_count + pending_count
+        total_count = count + pending_count
         
         # Update local cache
         self.local_cache.set(key, total_count)
         
-        return total_count, "batch" if pending_count > 0 else "redis"
+        if pending_count > 0:
+            return total_count, "batch"
+        return total_count, shard_id
 
-    def health_check(self) -> bool:
-        """Check if Redis connection is healthy"""
-        try:
-            return self.client.ping()
-        except redis.ConnectionError:
-            return False
+    def health_check(self) -> dict:
+        """Check health of all Redis shards"""
+        status = {}
+        for shard_id, client in self.sharded_redis.shards.items():
+            try:
+                status[shard_id] = client.ping()
+            except Exception:
+                status[shard_id] = False
+        return status
